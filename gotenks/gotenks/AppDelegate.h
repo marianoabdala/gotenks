@@ -13,7 +13,9 @@
 
 @property (strong, nonatomic) UIWindow *window;
 
-@property (readonly, strong, nonatomic) NSManagedObjectContext *managedObjectContext;
+@property (readonly, strong, nonatomic) NSManagedObjectContext *serviceManagedObjectContext;
+@property (readonly, strong, nonatomic) NSManagedObjectContext *fetchManagedObjectContext;
+@property (readonly, strong, nonatomic) NSManagedObjectContext *saveManagedObjectContext;
 @property (readonly, strong, nonatomic) NSManagedObjectModel *managedObjectModel;
 @property (readonly, strong, nonatomic) NSPersistentStoreCoordinator *persistentStoreCoordinator;
 

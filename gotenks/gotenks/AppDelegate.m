@@ -21,7 +21,11 @@
     // Override point for customization after application launch.
     UINavigationController *navigationController = (UINavigationController *)self.window.rootViewController;
     MasterViewController *controller = (MasterViewController *)navigationController.topViewController;
-    controller.managedObjectContext = self.managedObjectContext;
+    controller.fetchManagedObjectContext = self.fetchManagedObjectContext;
+    controller.saveManagedObjectContext = self.saveManagedObjectContext;
+    
+    [self scheduleNextCreateEventOnService];
+    
     return YES;
 }
 
@@ -51,7 +55,9 @@
 
 #pragma mark - Core Data stack
 
-@synthesize managedObjectContext = _managedObjectContext;
+@synthesize serviceManagedObjectContext = _serviceManagedObjectContext;
+@synthesize fetchManagedObjectContext = _fetchManagedObjectContext;
+@synthesize saveManagedObjectContext = _saveManagedObjectContext;
 @synthesize managedObjectModel = _managedObjectModel;
 @synthesize persistentStoreCoordinator = _persistentStoreCoordinator;
 
@@ -98,26 +104,98 @@
     return _persistentStoreCoordinator;
 }
 
+- (NSManagedObjectContext *)serviceManagedObjectContext {
+    
+    if (_serviceManagedObjectContext != nil) {
+        return _serviceManagedObjectContext;
+    }
+    
+    _serviceManagedObjectContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    
+    [_serviceManagedObjectContext setMergePolicy:NSMergeByPropertyObjectTrumpMergePolicy];
+    
+    [_serviceManagedObjectContext setParentContext:self.fetchManagedObjectContext];
+    
+    return _serviceManagedObjectContext;
+}
 
-- (NSManagedObjectContext *)managedObjectContext {
-    // Returns the managed object context for the application (which is already bound to the persistent store coordinator for the application.)
-    if (_managedObjectContext != nil) {
-        return _managedObjectContext;
+- (NSManagedObjectContext *)fetchManagedObjectContext {
+
+    if (_fetchManagedObjectContext != nil) {
+        return _fetchManagedObjectContext;
+    }
+    
+    _fetchManagedObjectContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
+    
+    [_fetchManagedObjectContext setMergePolicy:NSMergeByPropertyObjectTrumpMergePolicy];
+
+    [_fetchManagedObjectContext setParentContext:self.saveManagedObjectContext];
+    
+    return _fetchManagedObjectContext;
+}
+
+- (NSManagedObjectContext *)saveManagedObjectContext {
+
+    if (_saveManagedObjectContext != nil) {
+        return _saveManagedObjectContext;
     }
     
     NSPersistentStoreCoordinator *coordinator = [self persistentStoreCoordinator];
     if (!coordinator) {
         return nil;
     }
-    _managedObjectContext = [[NSManagedObjectContext alloc] init];
-    [_managedObjectContext setPersistentStoreCoordinator:coordinator];
-    return _managedObjectContext;
+    
+    _saveManagedObjectContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+
+    [_saveManagedObjectContext setMergePolicy:NSMergeByPropertyObjectTrumpMergePolicy];
+
+    [_saveManagedObjectContext setPersistentStoreCoordinator:coordinator];
+    
+    return _saveManagedObjectContext;
+}
+
+- (void)scheduleNextCreateEventOnService
+{
+    [self performSelector:@selector(createEventOnService)
+               withObject:nil
+               afterDelay:5.0f];
+}
+
+- (void)createEventOnService
+{
+    NSManagedObject *newManagedObject = [NSEntityDescription insertNewObjectForEntityForName:@"Event" inManagedObjectContext:self.serviceManagedObjectContext];
+    
+    [newManagedObject setValue:[NSDate date] forKey:@"timeStamp"];
+    
+    __block NSError *error = nil;
+    
+    [self.serviceManagedObjectContext performBlockAndWait:^{
+        
+        if (![self.serviceManagedObjectContext save:&error])
+        {
+            // Replace this implementation with code to handle the error appropriately.
+            // abort() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
+            NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
+            abort();
+        }
+        else
+        {
+            NSLog(@"Saved on the service.");
+        }
+    }];
+    
+    [self saveContext];
+
+    [self scheduleNextCreateEventOnService];
 }
 
 #pragma mark - Core Data Saving support
 
 - (void)saveContext {
-    NSManagedObjectContext *managedObjectContext = self.managedObjectContext;
+    
+    [self.fetchManagedObjectContext save:nil];
+    
+    NSManagedObjectContext *managedObjectContext = self.saveManagedObjectContext;
     if (managedObjectContext != nil) {
         NSError *error = nil;
         if ([managedObjectContext hasChanges] && ![managedObjectContext save:&error]) {
